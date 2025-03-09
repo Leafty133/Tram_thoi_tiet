@@ -2,7 +2,16 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include "DHT.h"
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include <ArduinoJson.h>
+#include <Adafruit_I2CDevice.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define SCREEN_ADDRESS 0X3C
+#define OLED_RESET -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 #define DHTPIN 25           
 #define DHTTYPE DHT22      
@@ -19,6 +28,7 @@ long lastUpdateId = 0;  // Lưu ID tin nhắn cuối cùng
 void setup() {
   Serial.begin(115200);
   WiFi.begin(ssid, password);
+  Wire.begin(32, 33);
   dht.begin();
   client.setInsecure();
 
@@ -27,9 +37,18 @@ void setup() {
     Serial.println("Đang kết nối WiFi...");
   }
   Serial.println("WiFi đã kết nối!");
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+        Serial.println(F("Không tìm thấy OLED!"));
+        while (true);
+    }
+
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
 }
 
-// 📩 Lấy tin nhắn từ Telegram
+// Lấy tin nhắn từ Telegram
 void checkTelegram() {
   HTTPClient http;
   String url = "https://api.telegram.org/bot" + botToken + "/getUpdates?offset=" + String(lastUpdateId + 1);
@@ -66,7 +85,7 @@ void checkTelegram() {
   http.end();
 }
 
-// 📤 Gửi tin nhắn lên Telegram
+// Gửi tin nhắn lên Telegram
 void sendTelegram(String message) {
   HTTPClient http;
   String url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
@@ -95,8 +114,41 @@ void Serial_Monitor(){
     Serial.println("Loi khong nhan duoc du lieu");
   }
 }
+
+void OLED_Display(){
+  float temp = dht.readTemperature();
+  float hum = dht.readHumidity();
+
+  display.clearDisplay();
+
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.print("Temperature: ");
+  display.setTextSize(2);
+  display.setCursor(0, 10);
+  display.print(temp);
+  display.print(" ");
+  display.setTextSize(1);
+  display.cp437(true);
+  display.write(167);
+  display.setTextSize(2);
+  display.print("C");
+
+  // hiển thị độ ẩm
+  display.setTextSize(1);
+  display.setCursor(0, 35);
+  display.print("Humidity: ");
+  display.setTextSize(2);
+  display.setCursor(0, 45);
+  display.print(hum);
+  display.print(" %"); 
+  
+  display.display();
+
+}
 void loop() {
   Serial_Monitor();
   checkTelegram();  
+  OLED_Display();
   delay(5000);  
 }
