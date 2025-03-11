@@ -1,4 +1,5 @@
 #include <WiFi.h>
+#include <Arduino.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include "DHT.h"
@@ -7,15 +8,27 @@
 #include <ArduinoJson.h>
 #include <Adafruit_I2CDevice.h>
 
-#define SCREEN_WIDTH 128
+#define SCREEN_WIDTH 128 // Khởi tạo OLED SSD1306
 #define SCREEN_HEIGHT 64
 #define SCREEN_ADDRESS 0X3C
 #define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-#define DHTPIN 25           
+#define DHTPIN 25          // Khởi tạo đối tượng DHT22
 #define DHTTYPE DHT22      
 DHT dht(DHTPIN, DHTTYPE);
+
+#define TRIG_PIN 27
+#define ECHO_PIN 26
+
+const long intervalTempHum = 1000;
+const long intervalDistance = 100;
+unsigned long timestampTH = 0;
+unsigned long timestampDis = 0;
+
+float temp = 0;
+float hum = 0;
+float dis = 0;
 
 const char* ssid = "Phuc Luong";      
 const char* password = "17071999";  
@@ -28,9 +41,13 @@ long lastUpdateId = 0;  // Lưu ID tin nhắn cuối cùng
 void setup() {
   Serial.begin(115200);
   WiFi.begin(ssid, password);
-  Wire.begin(32, 33);
+
+  Wire.begin(32, 33); // Đặt chân 32, 33 là chân SDA, SCL của OLED
   dht.begin();
-  client.setInsecure();
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  client.setInsecure(); // Xóa phương thức bảo mật của giao thức HTTP
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
@@ -43,11 +60,24 @@ void setup() {
         while (true);
     }
 
-    display.clearDisplay();
+    display.clearDisplay();  // Khởi tạo OLED
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
 }
 
+//Hàm lấy khoảng cách
+float getDistance(int trig_pin, int echo_pin){
+  digitalWrite(trig_pin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trig_pin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig_pin, LOW);
+
+  long duration = pulseIn(echo_pin, HIGH);
+  float Distance = duration * 0.034/2;
+
+  return Distance;
+}  
 // Lấy tin nhắn từ Telegram
 void checkTelegram() {
   HTTPClient http;
@@ -107,7 +137,7 @@ void Serial_Monitor(){
   float temp = dht.readTemperature();
   float hum = dht.readHumidity();
   if(!isnan(temp) && !isnan(hum)){
-    Serial.print("Tempẻature: "); Serial.println(temp);
+    Serial.print("Temperature: "); Serial.println(temp);
     Serial.print("Humadity: "); Serial.println(hum); 
   }
   else{
@@ -115,40 +145,59 @@ void Serial_Monitor(){
   }
 }
 
-void OLED_Display(){
-  float temp = dht.readTemperature();
-  float hum = dht.readHumidity();
+void OLED_Display(float temp, float hum,float dis){
 
   display.clearDisplay();
 
-  display.setTextSize(1);
-  display.setCursor(0, 0);
-  display.print("Temperature: ");
   display.setTextSize(2);
-  display.setCursor(0, 10);
+  display.setCursor(0, 0);
+  display.print("Temp: ");
+  display.setTextSize(1);
+  display.setCursor(64, 4);
   display.print(temp);
   display.print(" ");
   display.setTextSize(1);
   display.cp437(true);
   display.write(167);
-  display.setTextSize(2);
+  display.setTextSize(1);
   display.print("C");
 
   // hiển thị độ ẩm
-  display.setTextSize(1);
-  display.setCursor(0, 35);
-  display.print("Humidity: ");
   display.setTextSize(2);
-  display.setCursor(0, 45);
+  display.setCursor(0, 20);
+  display.print("Hum: ");
+  display.setTextSize(1);
+  display.setCursor(64, 24);
   display.print(hum);
   display.print(" %"); 
   
-  display.display();
+  // Hien thi khoang cach
+  display.setTextSize(2);
+  display.setCursor(0, 40);
+  display.print("Dis.: ");
+  display.setTextSize(1);
+  display.setCursor(64, 44);
+  display.print(dis);
+  display.print(" cm");
 
+  display.display();
 }
+
 void loop() {
+  unsigned long currentTimeStamp = millis();
   Serial_Monitor();
   checkTelegram();  
-  OLED_Display();
-  delay(5000);  
+
+  if(currentTimeStamp - timestampTH >= intervalTempHum){
+    temp = dht.readTemperature();
+    hum = dht.readHumidity();
+    timestampTH = currentTimeStamp;
+  }
+
+  if(currentTimeStamp - timestampDis >= intervalDistance){
+    dis = getDistance(TRIG_PIN, ECHO_PIN);
+    timestampDis = currentTimeStamp;
+  }
+
+  OLED_Display(temp, hum, dis);
 }
